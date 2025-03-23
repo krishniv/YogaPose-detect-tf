@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Punch Counter</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Punch Counter</h1>
+    
+    <div class="stats">
+      <div class="stat-box">
+        <h2>Left Punches</h2>
+        <div id="leftCount" class="count">0</div>
+      </div>
+      <div class="stat-box">
+        <h2>Right Punches</h2>
+        <div id="rightCount" class="count">0</div>
+      </div>
+      <div class="stat-box">
+        <h2>Total Punches</h2>
+        <div id="totalCount" class="count">0</div>
+      </div>
+    </div>
+    
+    <div class="mode-indicator" id="modeIndicator">
+      <span id="modeText">Loading...</span>
+    </div>
+    
+    <div class="video-container">
+      <video id="video" playsinline></video>
+      <canvas id="output"></canvas>
+    </div>
+    
+    <div class="controls">
+      <button id="startBtn">Start Tracking</button>
+      <button id="resetBtn">Reset Counters</button>
+      <button id="toggleVideoBtn">Toggle Video/Overlay</button>
+    </div>
+  </div>
+
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <!-- TensorFlow.js Models -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+  <!-- Application Logic -->
+  <script src="app.js"></script>
+</body>
+</html> 
