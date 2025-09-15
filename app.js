@@ -4,30 +4,69 @@ const canvas = document.getElementById('output');
 const ctx = canvas.getContext('2d');
 const startBtn = document.getElementById('startBtn');
 const resetBtn = document.getElementById('resetBtn');
-const leftCountEl = document.getElementById('leftCount');
-const rightCountEl = document.getElementById('rightCount');
-const totalCountEl = document.getElementById('totalCount');
 const modeIndicator = document.getElementById('modeIndicator');
 const modeText = document.getElementById('modeText');
 const toggleVideoBtn = document.getElementById('toggleVideoBtn');
+
+// New DOM elements for yoga tracking
+const poseNameEl = document.getElementById('poseName');
+const poseConfidenceEl = document.getElementById('poseConfidence');
+const poseTimerEl = document.getElementById('poseTimer');
+const sessionTimeEl = document.getElementById('sessionTime');
+const posesCompletedEl = document.getElementById('posesCompleted');
+const totalHoldTimeEl = document.getElementById('totalHoldTime');
+const instructionTextEl = document.getElementById('instructionText');
+const poseButtons = document.querySelectorAll('.pose-btn');
 
 // State variables
 let model;
 let detector;
 let isTracking = false;
-let leftPunchCount = 0;
-let rightPunchCount = 0;
 let showVideo = true;
 
-// Punch detection parameters
-let prevLeftWristPosition = null;
-let prevRightWristPosition = null;
-let leftPunchState = 'ready'; // 'ready', 'extended', 'retracting'
-let rightPunchState = 'ready';
-const punchThreshold = 0.15; // Movement threshold to detect a punch
-const punchCooldown = 300; // Minimum time (ms) between punch detections
-let lastLeftPunchTime = 0;
-let lastRightPunchTime = 0;
+// Yoga tracking state
+let currentPose = null;
+let poseStartTime = null;
+let sessionStartTime = null;
+let posesCompleted = 0;
+let totalHoldTime = 0;
+let selectedPose = 'auto'; // 'auto', 'warrior1', 'tree', 'mountain'
+
+// Yoga pose definitions and thresholds
+const yogaPoses = {
+  'warrior1': {
+    name: 'Warrior I',
+    instruction: 'Stand with feet hip-width apart, step one foot forward into a lunge, raise arms overhead with palms together.',
+    keyPoints: ['left_shoulder', 'right_shoulder', 'left_hip', 'right_hip', 'left_knee', 'right_knee'],
+    thresholds: {
+      armAngle: 45, // Arms should be roughly vertical
+      hipAngle: 30, // Hip alignment
+      kneeAngle: 90  // Front knee should be at 90 degrees
+    }
+  },
+  'tree': {
+    name: 'Tree Pose',
+    instruction: 'Stand on one leg, place the other foot on inner thigh or calf (avoid knee), bring hands to prayer position.',
+    keyPoints: ['left_ankle', 'right_ankle', 'left_knee', 'right_knee', 'left_hip', 'right_hip'],
+    thresholds: {
+      balanceThreshold: 0.1, // How much the person can sway
+      footPosition: 0.3 // Where the lifted foot should be relative to standing leg
+    }
+  },
+  'mountain': {
+    name: 'Mountain Pose',
+    instruction: 'Stand tall with feet together, arms at sides, shoulders relaxed, spine straight.',
+    keyPoints: ['left_shoulder', 'right_shoulder', 'left_hip', 'right_hip', 'left_ankle', 'right_ankle'],
+    thresholds: {
+      alignmentThreshold: 0.2, // How aligned the body should be
+      armPosition: 0.1 // Arms should be close to sides
+    }
+  }
+};
+
+// Pose detection parameters
+const poseConfidenceThreshold = 0.3;
+const poseHoldTime = 2000; // Minimum time to hold pose (ms)
 
 // Setup the video stream from webcam
 async function setupCamera() {
@@ -48,9 +87,8 @@ async function setupCamera() {
     // Add debug info to confirm webcam is working
     console.log("Camera connected successfully. Resolution:", video.videoWidth, "x", video.videoHeight);
     
-    modeText.textContent = "Camera Mode - Using Webcam";
+    modeText.textContent = "Camera Connected - Ready for Yoga Tracking";
     modeText.classList.add('camera-mode');
-    modeText.classList.remove('demo-mode');
     
     return new Promise((resolve) => {
       video.onloadedmetadata = () => {
@@ -80,45 +118,11 @@ async function loadModel() {
   console.log('Model loaded successfully');
 }
 
-// Add this function to app.js
-async function setupDemoVideo() {
-  // Create a dummy canvas as the video source
-  const dummyCanvas = document.createElement('canvas');
-  dummyCanvas.width = 640;
-  dummyCanvas.height = 480;
-  const dummyCtx = dummyCanvas.getContext('2d');
-  
-  // Draw something on the canvas
-  dummyCtx.fillStyle = '#333';
-  dummyCtx.fillRect(0, 0, dummyCanvas.width, dummyCanvas.height);
-  dummyCtx.fillStyle = 'white';
-  dummyCtx.font = '24px Arial';
-  dummyCtx.fillText('DEMO MODE - No camera access', 180, 240);
-  
-  // Convert canvas to MediaStream
-  const stream = dummyCanvas.captureStream();
-  video.srcObject = stream;
-  
-  modeText.textContent = "DEMO MODE - No camera access";
-  modeText.classList.add('demo-mode');
-  modeText.classList.remove('camera-mode');
-  
-  return new Promise((resolve) => {
-    video.onloadedmetadata = () => {
-      resolve(video);
-    };
-  });
-}
 
 // Initialize the application
 async function init() {
   try {
-    try {
-      await setupCamera();
-    } catch (cameraError) {
-      console.warn('Camera access failed, using demo mode:', cameraError);
-      await setupDemoVideo();
-    }
+    await setupCamera();
     
     video.play();
     
@@ -129,8 +133,21 @@ async function init() {
     await loadModel();
     
     startBtn.addEventListener('click', toggleTracking);
-    resetBtn.addEventListener('click', resetCounters);
+    resetBtn.addEventListener('click', resetSession);
     toggleVideoBtn.addEventListener('click', toggleVideoVisibility);
+    
+    // Add pose selection event listeners
+    poseButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Remove active class from all buttons
+        poseButtons.forEach(b => b.classList.remove('active'));
+        // Add active class to clicked button
+        btn.classList.add('active');
+        // Update selected pose
+        selectedPose = btn.dataset.pose;
+        updateInstructions();
+      });
+    });
     
     console.log('App initialized successfully');
     console.log("Video source type:", video.srcObject ? "Connected" : "Not connected");
@@ -146,27 +163,33 @@ async function init() {
     video.style.display = 'block';
     video.style.opacity = '1';
     canvas.style.backgroundColor = 'transparent';
+    
+    // Initialize instructions
+    updateInstructions();
   } catch (error) {
     console.error('Error initializing app:', error);
     
     // Create error message element
     const errorBox = document.createElement('div');
-    errorBox.style.backgroundColor = '#ffebee';
+    errorBox.style.backgroundColor = 'rgba(255, 235, 238, 0.95)';
     errorBox.style.color = '#d32f2f';
     errorBox.style.padding = '20px';
     errorBox.style.margin = '20px 0';
-    errorBox.style.borderRadius = '5px';
+    errorBox.style.borderRadius = '15px';
     errorBox.style.textAlign = 'center';
+    errorBox.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.1)';
+    errorBox.style.backdropFilter = 'blur(10px)';
     
     errorBox.innerHTML = `
-      <h3>Error Starting Application</h3>
+      <h3>🧘‍♀️ Camera Required for Yoga Tracking</h3>
       <p>${error.message}</p>
-      <p>Common solutions:</p>
+      <p><strong>To use this yoga tracker:</strong></p>
       <ul style="text-align: left; display: inline-block;">
         <li>Make sure you're accessing via <strong>localhost</strong> or <strong>HTTPS</strong></li>
         <li>Try using Chrome, Firefox, or Edge (latest versions)</li>
         <li>Grant camera permissions when prompted</li>
         <li>Check if your camera is working in other applications</li>
+        <li>Ensure good lighting for pose detection</li>
       </ul>
     `;
     
@@ -176,118 +199,274 @@ async function init() {
   }
 }
 
-// Toggle punch tracking
+// Toggle yoga tracking
 function toggleTracking() {
   isTracking = !isTracking;
-  startBtn.textContent = isTracking ? 'Pause Tracking' : 'Start Tracking';
+  startBtn.textContent = isTracking ? 'Pause Session' : 'Start Session';
   
   if (isTracking) {
+    sessionStartTime = Date.now();
     detectPose();
   }
 }
 
-// Reset punch counters
-function resetCounters() {
-  leftPunchCount = 0;
-  rightPunchCount = 0;
-  updateCounterDisplay();
+// Update pose instructions
+function updateInstructions() {
+  if (selectedPose === 'auto') {
+    instructionTextEl.innerHTML = `
+      <div class="instruction-content">
+        <div class="pose-demo">
+          <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="#4CAF50" stroke-width="2"/>
+            <path d="M12 6L12 12L16 14" stroke="#4CAF50" stroke-width="2"/>
+          </svg>
+        </div>
+        <p>The app will automatically detect and track your yoga poses. Try different poses like Mountain, Tree, or Warrior I!</p>
+      </div>
+    `;
+  } else if (yogaPoses[selectedPose]) {
+    const pose = yogaPoses[selectedPose];
+    let svgIcon = '';
+    
+    if (selectedPose === 'warrior1') {
+      svgIcon = `
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
+          <path d="M8 20L8 16L12 12L16 16L16 20L8 20Z" fill="#4CAF50" opacity="0.3"/>
+          <path d="M12 20L12 4" stroke="#4CAF50" stroke-width="3"/>
+          <path d="M8 8L12 4L16 8" stroke="#4CAF50" stroke-width="3"/>
+          <circle cx="12" cy="6" r="3" fill="#4CAF50"/>
+        </svg>
+      `;
+    } else if (selectedPose === 'tree') {
+      svgIcon = `
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
+          <path d="M12 20L12 8" stroke="#4CAF50" stroke-width="3"/>
+          <path d="M8 12L12 8L16 12" stroke="#4CAF50" stroke-width="3"/>
+          <circle cx="12" cy="4" r="3" fill="#4CAF50"/>
+          <path d="M6 16L18 16" stroke="#4CAF50" stroke-width="3"/>
+          <path d="M6 18L18 18" stroke="#4CAF50" stroke-width="3"/>
+        </svg>
+      `;
+    } else if (selectedPose === 'mountain') {
+      svgIcon = `
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
+          <path d="M12 20L12 4" stroke="#4CAF50" stroke-width="3"/>
+          <path d="M8 20L16 20" stroke="#4CAF50" stroke-width="3"/>
+          <circle cx="12" cy="4" r="3" fill="#4CAF50"/>
+          <path d="M10 8L14 8" stroke="#4CAF50" stroke-width="2"/>
+          <path d="M10 12L14 12" stroke="#4CAF50" stroke-width="2"/>
+        </svg>
+      `;
+    }
+    
+    instructionTextEl.innerHTML = `
+      <div class="instruction-content">
+        <div class="pose-demo">${svgIcon}</div>
+        <p>${pose.instruction}</p>
+      </div>
+    `;
+  } else {
+    instructionTextEl.innerHTML = '<p>Select a pose to see instructions</p>';
+  }
 }
 
-// Update the counter display
-function updateCounterDisplay() {
-  leftCountEl.textContent = leftPunchCount;
-  rightCountEl.textContent = rightPunchCount;
-  totalCountEl.textContent = leftPunchCount + rightPunchCount;
+// Reset yoga session
+function resetSession() {
+  posesCompleted = 0;
+  totalHoldTime = 0;
+  currentPose = null;
+  poseStartTime = null;
+  sessionStartTime = null;
+  updateYogaDisplay();
 }
 
-// Detect if a punch has been thrown
-function detectPunch(poses) {
+// Update the yoga tracking display
+function updateYogaDisplay() {
+  posesCompletedEl.textContent = posesCompleted;
+  
+  // Update session time
+  if (sessionStartTime) {
+    const sessionElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+    sessionTimeEl.textContent = formatTime(sessionElapsed);
+  }
+  
+  // Update total hold time
+  totalHoldTimeEl.textContent = formatTime(Math.floor(totalHoldTime / 1000));
+  
+  // Update pose timer
+  if (poseStartTime && currentPose) {
+    const poseElapsed = Math.floor((Date.now() - poseStartTime) / 1000);
+    poseTimerEl.textContent = formatTime(poseElapsed);
+  } else {
+    poseTimerEl.textContent = '00:00';
+  }
+}
+
+// Format time in MM:SS format
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Detect yoga poses
+function detectYogaPose(poses) {
   if (!poses || poses.length === 0) return;
   
   const pose = poses[0];
   const keypoints = pose.keypoints;
   
-  const leftWrist = keypoints.find(k => k.name === 'left_wrist');
-  const rightWrist = keypoints.find(k => k.name === 'right_wrist');
-  const leftElbow = keypoints.find(k => k.name === 'left_elbow');
-  const rightElbow = keypoints.find(k => k.name === 'right_elbow');
-  const leftShoulder = keypoints.find(k => k.name === 'left_shoulder');
-  const rightShoulder = keypoints.find(k => k.name === 'right_shoulder');
+  // Get all keypoints with sufficient confidence
+  const validKeypoints = keypoints.filter(kp => kp.score > poseConfidenceThreshold);
   
-  // Skip if key points aren't detected with enough confidence
-  if (!leftWrist || !rightWrist || !leftElbow || !rightElbow || 
-      !leftShoulder || !rightShoulder || 
-      leftWrist.score < 0.3 || rightWrist.score < 0.3) {
-    prevLeftWristPosition = null;
-    prevRightWristPosition = null;
+  if (validKeypoints.length < 8) {
+    // Not enough keypoints detected
+    if (currentPose) {
+      currentPose = null;
+      poseStartTime = null;
+      updatePoseDisplay(null, 0);
+    }
     return;
   }
   
+  // Classify the pose
+  const detectedPose = classifyPose(keypoints);
+  const confidence = calculatePoseConfidence(keypoints, detectedPose);
+  
+  // Update pose display
+  updatePoseDisplay(detectedPose, confidence);
+  
+  // Handle pose timing
+  handlePoseTiming(detectedPose, confidence);
+}
+
+// Classify yoga pose based on keypoint positions and angles
+function classifyPose(keypoints) {
+  const keypointMap = {};
+  keypoints.forEach(kp => {
+    if (kp.score > poseConfidenceThreshold) {
+      keypointMap[kp.name] = kp;
+    }
+  });
+  
+  // Check for Mountain Pose (standing straight)
+  if (isMountainPose(keypointMap)) {
+    return 'mountain';
+  }
+  
+  // Check for Tree Pose (one leg lifted)
+  if (isTreePose(keypointMap)) {
+    return 'tree';
+  }
+  
+  // Check for Warrior I (lunge with arms up)
+  if (isWarrior1Pose(keypointMap)) {
+    return 'warrior1';
+  }
+  
+  return 'unknown';
+}
+
+// Check if pose matches Mountain Pose
+function isMountainPose(keypoints) {
+  const required = ['left_shoulder', 'right_shoulder', 'left_hip', 'right_hip'];
+  if (!required.every(kp => keypoints[kp])) return false;
+  
+  // Check if shoulders and hips are roughly aligned
+  const shoulderDiff = Math.abs(keypoints.left_shoulder.x - keypoints.right_shoulder.x);
+  const hipDiff = Math.abs(keypoints.left_hip.x - keypoints.right_hip.x);
+  
+  return shoulderDiff < 50 && hipDiff < 50;
+}
+
+// Check if pose matches Tree Pose
+function isTreePose(keypoints) {
+  const required = ['left_ankle', 'right_ankle', 'left_knee', 'right_knee'];
+  if (!required.every(kp => keypoints[kp])) return false;
+  
+  // Check if one ankle is significantly higher than the other
+  const ankleHeightDiff = Math.abs(keypoints.left_ankle.y - keypoints.right_ankle.y);
+  return ankleHeightDiff > 30;
+}
+
+// Check if pose matches Warrior I
+function isWarrior1Pose(keypoints) {
+  const required = ['left_shoulder', 'right_shoulder', 'left_hip', 'right_hip', 'left_knee', 'right_knee'];
+  if (!required.every(kp => keypoints[kp])) return false;
+  
+  // Check if arms are raised (shoulders higher than hips)
+  const leftArmRaised = keypoints.left_shoulder.y < keypoints.left_hip.y - 20;
+  const rightArmRaised = keypoints.right_shoulder.y < keypoints.right_hip.y - 20;
+  
+  // Check if one knee is significantly forward (lunge position)
+  const kneeForwardDiff = Math.abs(keypoints.left_knee.x - keypoints.right_knee.x);
+  
+  return (leftArmRaised || rightArmRaised) && kneeForwardDiff > 40;
+}
+
+// Calculate confidence score for detected pose
+function calculatePoseConfidence(keypoints, poseType) {
+  if (poseType === 'unknown') return 0;
+  
+  const pose = yogaPoses[poseType];
+  if (!pose) return 0;
+  
+  // Simple confidence calculation based on keypoint visibility
+  const requiredKeypoints = pose.keyPoints;
+  const visibleKeypoints = requiredKeypoints.filter(name => {
+    const kp = keypoints.find(k => k.name === name);
+    return kp && kp.score > poseConfidenceThreshold;
+  });
+  
+  return Math.round((visibleKeypoints.length / requiredKeypoints.length) * 100);
+}
+
+// Update pose display information
+function updatePoseDisplay(poseType, confidence) {
+  if (poseType === 'unknown' || confidence < 30) {
+    poseNameEl.textContent = 'Detecting...';
+    poseConfidenceEl.textContent = '0%';
+    poseConfidenceEl.style.color = '#666';
+  } else {
+    const poseName = yogaPoses[poseType] ? yogaPoses[poseType].name : poseType;
+    poseNameEl.textContent = poseName;
+    poseConfidenceEl.textContent = `${confidence}%`;
+    
+    // Color code confidence
+    if (confidence >= 80) {
+      poseConfidenceEl.style.color = '#4CAF50'; // Green
+    } else if (confidence >= 60) {
+      poseConfidenceEl.style.color = '#FF9800'; // Orange
+    } else {
+      poseConfidenceEl.style.color = '#f44336'; // Red
+    }
+  }
+}
+
+// Handle pose timing and completion tracking
+function handlePoseTiming(poseType, confidence) {
   const now = Date.now();
   
-  // Process left hand punch
-  if (prevLeftWristPosition) {
-    // Calculate z-movement (approximated by measuring change in x-position relative to shoulder)
-    const leftShoulderToWristX = leftWrist.x - leftShoulder.x;
-    const prevLeftShoulderToWristX = prevLeftWristPosition.x - leftShoulder.x;
-    const leftZMovement = leftShoulderToWristX - prevLeftShoulderToWristX;
+  // If we detected a new pose or lost the current pose
+  if (poseType !== currentPose) {
+    // Complete previous pose if it was held long enough
+    if (currentPose && poseStartTime && (now - poseStartTime) > poseHoldTime) {
+      posesCompleted++;
+      totalHoldTime += (now - poseStartTime);
+    }
     
-    // State machine for punch detection
-    switch (leftPunchState) {
-      case 'ready':
-        if (leftZMovement < -punchThreshold && now - lastLeftPunchTime > punchCooldown) {
-          leftPunchState = 'extended';
-        }
-        break;
-      case 'extended':
-        if (leftZMovement > punchThreshold) {
-          leftPunchState = 'retracting';
-        }
-        break;
-      case 'retracting':
-        if (Math.abs(leftZMovement) < punchThreshold/2) {
-          leftPunchCount++;
-          updateCounterDisplay();
-          leftPunchState = 'ready';
-          lastLeftPunchTime = now;
-        }
-        break;
+    // Start new pose if confidence is high enough
+    if (poseType !== 'unknown' && confidence >= 60) {
+      currentPose = poseType;
+      poseStartTime = now;
+    } else {
+      currentPose = null;
+      poseStartTime = null;
     }
   }
   
-  // Process right hand punch
-  if (prevRightWristPosition) {
-    // Calculate z-movement (approximated by measuring change in x-position relative to shoulder)
-    const rightShoulderToWristX = rightWrist.x - rightShoulder.x;
-    const prevRightShoulderToWristX = prevRightWristPosition.x - rightShoulder.x;
-    const rightZMovement = rightShoulderToWristX - prevRightShoulderToWristX;
-    
-    // State machine for punch detection
-    switch (rightPunchState) {
-      case 'ready':
-        if (rightZMovement < -punchThreshold && now - lastRightPunchTime > punchCooldown) {
-          rightPunchState = 'extended';
-        }
-        break;
-      case 'extended':
-        if (rightZMovement > punchThreshold) {
-          rightPunchState = 'retracting';
-        }
-        break;
-      case 'retracting':
-        if (Math.abs(rightZMovement) < punchThreshold/2) {
-          rightPunchCount++;
-          updateCounterDisplay();
-          rightPunchState = 'ready';
-          lastRightPunchTime = now;
-        }
-        break;
-    }
-  }
-  
-  // Store current positions for next frame
-  prevLeftWristPosition = { x: leftWrist.x, y: leftWrist.y };
-  prevRightWristPosition = { x: rightWrist.x, y: rightWrist.y };
+  // Update display
+  updateYogaDisplay();
 }
 
 // Draw pose keypoints and lines on canvas
@@ -319,46 +498,64 @@ function drawPose(pose) {
   
   // Draw keypoints
   pose.keypoints.forEach(keypoint => {
-    if (keypoint.score > 0.3) {
+    if (keypoint.score > poseConfidenceThreshold) {
       ctx.beginPath();
-      ctx.arc(keypoint.x, keypoint.y, 5, 0, 2 * Math.PI);
+      ctx.arc(keypoint.x, keypoint.y, 6, 0, 2 * Math.PI);
       
-      // Use different colors for left and right wrists to visualize punches
-      if (keypoint.name === 'left_wrist') {
-        ctx.fillStyle = leftPunchState === 'extended' ? 'red' : 'green';
-      } else if (keypoint.name === 'right_wrist') {
-        ctx.fillStyle = rightPunchState === 'extended' ? 'red' : 'blue';
+      // Use different colors for different body parts
+      if (keypoint.name.includes('shoulder') || keypoint.name.includes('elbow') || keypoint.name.includes('wrist')) {
+        ctx.fillStyle = '#4CAF50'; // Green for arms
+      } else if (keypoint.name.includes('hip') || keypoint.name.includes('knee') || keypoint.name.includes('ankle')) {
+        ctx.fillStyle = '#2196F3'; // Blue for legs
       } else {
-        ctx.fillStyle = 'yellow';
+        ctx.fillStyle = '#FF9800'; // Orange for torso/head
       }
       
       ctx.fill();
+      
+      // Add white border
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 2;
+      ctx.stroke();
     }
   });
   
-  // Draw lines connecting keypoints (for arms)
+  // Draw lines connecting keypoints (full body skeleton)
   const connectedParts = [
+    // Arms
     ['left_shoulder', 'left_elbow'],
     ['left_elbow', 'left_wrist'],
     ['right_shoulder', 'right_elbow'],
-    ['right_elbow', 'right_wrist']
+    ['right_elbow', 'right_wrist'],
+    // Torso
+    ['left_shoulder', 'right_shoulder'],
+    ['left_hip', 'right_hip'],
+    ['left_shoulder', 'left_hip'],
+    ['right_shoulder', 'right_hip'],
+    // Legs
+    ['left_hip', 'left_knee'],
+    ['left_knee', 'left_ankle'],
+    ['right_hip', 'right_knee'],
+    ['right_knee', 'right_ankle']
   ];
   
   connectedParts.forEach(pair => {
     const part1 = pose.keypoints.find(k => k.name === pair[0]);
     const part2 = pose.keypoints.find(k => k.name === pair[1]);
     
-    if (part1 && part2 && part1.score > 0.3 && part2.score > 0.3) {
+    if (part1 && part2 && part1.score > poseConfidenceThreshold && part2.score > poseConfidenceThreshold) {
       ctx.beginPath();
       ctx.moveTo(part1.x, part1.y);
       ctx.lineTo(part2.x, part2.y);
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3;
       
-      // Different colors for left and right arms
-      if (pair[0].includes('left')) {
-        ctx.strokeStyle = 'green';
+      // Different colors for different body parts
+      if (pair[0].includes('shoulder') || pair[0].includes('elbow') || pair[0].includes('wrist')) {
+        ctx.strokeStyle = '#4CAF50'; // Green for arms
+      } else if (pair[0].includes('hip') || pair[0].includes('knee') || pair[0].includes('ankle')) {
+        ctx.strokeStyle = '#2196F3'; // Blue for legs
       } else {
-        ctx.strokeStyle = 'blue';
+        ctx.strokeStyle = '#FF9800'; // Orange for torso
       }
       
       ctx.stroke();
@@ -374,7 +571,7 @@ async function detectPose() {
     const poses = await detector.estimatePoses(video);
     
     if (poses && poses.length > 0) {
-      detectPunch(poses);
+      detectYogaPose(poses);
       drawPose(poses[0]);
     }
     

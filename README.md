@@ -1,14 +1,8 @@
-# Punch Counter - TensorFlow.js Webcam Application
+# 🧘‍♀️ Yoga Pose Tracker
 
-This application uses TensorFlow.js and pose detection to track and count punches thrown in front of your webcam in real-time.
+Real-time yoga pose detection using TensorFlow.js and webcam. Detects Mountain, Tree, and Warrior I poses with confidence scoring and timing.
 
-
-## Overview
-
-The Punch Counter application uses machine learning to detect your body pose through your webcam and counts how many punches you throw with each hand. It's a fun way to practice boxing, track your workout intensity, or just play around with pose detection technology.
-
-## Run the application
-Using Python 3.x
-python -m http.server
-Using Python 2.x
-python -m SimpleHTTPServer
+## Run locally
+```bash
+python3 -m http.server 8000
+```
