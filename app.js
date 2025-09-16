@@ -15,14 +15,19 @@ const poseTimerEl = document.getElementById('poseTimer');
 const sessionTimeEl = document.getElementById('sessionTime');
 const posesCompletedEl = document.getElementById('posesCompleted');
 const totalHoldTimeEl = document.getElementById('totalHoldTime');
-const instructionTextEl = document.getElementById('instructionText');
 const poseButtons = document.querySelectorAll('.pose-btn');
+
+// New UI elements for togglable sidebar
+const sidebar = document.getElementById('poseSidebar');
+const mainContent = document.getElementById('mainContent');
+const sidebarToggleBtn = document.getElementById('sidebarToggle');
 
 // State variables
 let model;
 let detector;
 let isTracking = false;
 let showVideo = true;
+let timerInterval = null;
 
 // Yoga tracking state
 let currentPose = null;
@@ -135,6 +140,7 @@ async function init() {
     startBtn.addEventListener('click', toggleTracking);
     resetBtn.addEventListener('click', resetSession);
     toggleVideoBtn.addEventListener('click', toggleVideoVisibility);
+    sidebarToggleBtn.addEventListener('click', toggleSidebar);
     
     // Add pose selection event listeners
     poseButtons.forEach(btn => {
@@ -145,7 +151,6 @@ async function init() {
         btn.classList.add('active');
         // Update selected pose
         selectedPose = btn.dataset.pose;
-        updateInstructions();
       });
     });
     
@@ -164,8 +169,6 @@ async function init() {
     video.style.opacity = '1';
     canvas.style.backgroundColor = 'transparent';
     
-    // Initialize instructions
-    updateInstructions();
   } catch (error) {
     console.error('Error initializing app:', error);
     
@@ -199,6 +202,12 @@ async function init() {
   }
 }
 
+// Toggle sidebar visibility
+function toggleSidebar() {
+  sidebar.classList.toggle('sidebar--hidden');
+  mainContent.classList.toggle('sidebar--hidden');
+}
+
 // Toggle yoga tracking
 function toggleTracking() {
   isTracking = !isTracking;
@@ -206,72 +215,18 @@ function toggleTracking() {
   
   if (isTracking) {
     sessionStartTime = Date.now();
+    timerInterval = setInterval(updateYogaDisplay, 1000);
     detectPose();
-  }
-}
-
-// Update pose instructions
-function updateInstructions() {
-  if (selectedPose === 'auto') {
-    instructionTextEl.innerHTML = `
-      <div class="instruction-content">
-        <div class="pose-demo">
-          <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="10" stroke="#4CAF50" stroke-width="2"/>
-            <path d="M12 6L12 12L16 14" stroke="#4CAF50" stroke-width="2"/>
-          </svg>
-        </div>
-        <p>The app will automatically detect and track your yoga poses. Try different poses like Mountain, Tree, or Warrior I!</p>
-      </div>
-    `;
-  } else if (yogaPoses[selectedPose]) {
-    const pose = yogaPoses[selectedPose];
-    let svgIcon = '';
-    
-    if (selectedPose === 'warrior1') {
-      svgIcon = `
-        <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
-          <path d="M8 20L8 16L12 12L16 16L16 20L8 20Z" fill="#4CAF50" opacity="0.3"/>
-          <path d="M12 20L12 4" stroke="#4CAF50" stroke-width="3"/>
-          <path d="M8 8L12 4L16 8" stroke="#4CAF50" stroke-width="3"/>
-          <circle cx="12" cy="6" r="3" fill="#4CAF50"/>
-        </svg>
-      `;
-    } else if (selectedPose === 'tree') {
-      svgIcon = `
-        <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
-          <path d="M12 20L12 8" stroke="#4CAF50" stroke-width="3"/>
-          <path d="M8 12L12 8L16 12" stroke="#4CAF50" stroke-width="3"/>
-          <circle cx="12" cy="4" r="3" fill="#4CAF50"/>
-          <path d="M6 16L18 16" stroke="#4CAF50" stroke-width="3"/>
-          <path d="M6 18L18 18" stroke="#4CAF50" stroke-width="3"/>
-        </svg>
-      `;
-    } else if (selectedPose === 'mountain') {
-      svgIcon = `
-        <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
-          <path d="M12 20L12 4" stroke="#4CAF50" stroke-width="3"/>
-          <path d="M8 20L16 20" stroke="#4CAF50" stroke-width="3"/>
-          <circle cx="12" cy="4" r="3" fill="#4CAF50"/>
-          <path d="M10 8L14 8" stroke="#4CAF50" stroke-width="2"/>
-          <path d="M10 12L14 12" stroke="#4CAF50" stroke-width="2"/>
-        </svg>
-      `;
-    }
-    
-    instructionTextEl.innerHTML = `
-      <div class="instruction-content">
-        <div class="pose-demo">${svgIcon}</div>
-        <p>${pose.instruction}</p>
-      </div>
-    `;
   } else {
-    instructionTextEl.innerHTML = '<p>Select a pose to see instructions</p>';
+    clearInterval(timerInterval);
+    timerInterval = null;
   }
 }
 
 // Reset yoga session
 function resetSession() {
+  isTracking = false;
+  startBtn.textContent = 'Start Session';
   posesCompleted = 0;
   totalHoldTime = 0;
   currentPose = null;
@@ -288,6 +243,8 @@ function updateYogaDisplay() {
   if (sessionStartTime) {
     const sessionElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
     sessionTimeEl.textContent = formatTime(sessionElapsed);
+  } else {
+    sessionTimeEl.textContent = '00:00';
   }
   
   // Update total hold time
@@ -465,8 +422,6 @@ function handlePoseTiming(poseType, confidence) {
     }
   }
   
-  // Update display
-  updateYogaDisplay();
 }
 
 // Draw pose keypoints and lines on canvas

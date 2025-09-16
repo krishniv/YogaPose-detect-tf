@@ -4,138 +4,117 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Yoga Pose Tracker</title>
+  <link href="https://fonts.cdnfonts.com/css/satoshi" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="container">
-    <!-- Header with Key Stats -->
-    <div class="header">
-      <h1>🧘‍♀️ Yoga Pose Tracker</h1>
-      <div class="header-stats">
-        <div class="header-stat">
-          <span class="stat-label">Session Time</span>
-          <span id="sessionTime" class="stat-value">00:00</span>
-        </div>
-        <div class="header-stat">
-          <span class="stat-label">Poses Completed</span>
-          <span id="posesCompleted" class="stat-value">0</span>
-        </div>
-        <div class="header-stat">
-          <span class="stat-label">Total Hold Time</span>
-          <span id="totalHoldTime" class="stat-value">00:00</span>
-        </div>
+  <div class="app-layout">
+    <!-- Toggable Sidebar for Pose Selection -->
+    <aside id="poseSidebar" class="sidebar">
+      <div class="sidebar-header">
+        <h2>Select Pose</h2>
       </div>
-    </div>
-    
-    <div class="main-layout">
-      <!-- Left Side - Information Panel -->
-      <div class="info-panel">
-        <!-- Current Pose Display -->
-        <div class="pose-display">
-          <div class="current-pose" id="currentPose">
-            <h2>Current Pose: <span id="poseName">Detecting...</span></h2>
-            <div class="pose-confidence">
-              Confidence: <span id="poseConfidence">0%</span>
+      <div class="pose-buttons">
+        <button class="pose-btn" data-pose="warrior1">
+          <div class="pose-btn-content">
+            <div class="pose-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M8 20L8 16L12 12L16 16L16 20L8 20Z" fill="currentColor" opacity="0.3"/>
+                <path d="M12 20L12 4" stroke="currentColor" stroke-width="2"/>
+                <path d="M8 8L12 4L16 8" stroke="currentColor" stroke-width="2"/>
+                <circle cx="12" cy="6" r="2" fill="currentColor"/>
+              </svg>
+            </div>
+            <span>Warrior I</span>
+          </div>
+        </button>
+        <button class="pose-btn" data-pose="tree">
+          <div class="pose-btn-content">
+            <div class="pose-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M12 20L12 8" stroke="currentColor" stroke-width="2"/>
+                <path d="M8 12L12 8L16 12" stroke="currentColor" stroke-width="2"/>
+                <circle cx="12" cy="4" r="2" fill="currentColor"/>
+                <path d="M6 16L18 16" stroke="currentColor" stroke-width="2"/>
+                <path d="M6 18L18 18" stroke="currentColor" stroke-width="2"/>
+              </svg>
+            </div>
+            <span>Tree Pose</span>
+          </div>
+        </button>
+        <button class="pose-btn" data-pose="mountain">
+          <div class="pose-btn-content">
+            <div class="pose-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M12 20L12 4" stroke="currentColor" stroke-width="2"/>
+                <path d="M8 20L16 20" stroke="currentColor" stroke-width="2"/>
+                <circle cx="12" cy="4" r="2" fill="currentColor"/>
+                <path d="M10 8L14 8" stroke="currentColor" stroke-width="2"/>
+                <path d="M10 12L14 12" stroke="currentColor" stroke-width="2"/>
+              </svg>
+            </div>
+            <span>Mountain Pose</span>
+          </div>
+        </button>
+        <button class="pose-btn active" data-pose="auto">
+          <div class="pose-btn-content">
+            <div class="pose-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                <path d="M12 6L12 12L16 14" stroke="currentColor" stroke-width="2"/>
+                <circle cx="12" cy="12" r="1" fill="currentColor"/>
+              </svg>
+            </div>
+            <span>Auto Detect</span>
+          </div>
+        </button>
+      </div>
+      <div class="card mode-indicator" id="modeIndicator">
+        <span id="modeText">Loading...</span>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main id="mainContent" class="main-content">
+      <header class="header">
+        <button id="sidebarToggle" class="sidebar-toggle">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <h1>🧘‍♀️ Yoga Pose Tracker</h1>
+      </header>
+
+      <div class="main-layout">
+        <div class="video-panel">
+          <div class="video-container">
+            <video id="video" playsinline></video>
+            <canvas id="output"></canvas>
+          </div>
+          <div class="controls">
+            <button id="startBtn">Start Session</button>
+            <button id="resetBtn">Reset Session</button>
+            <button id="toggleVideoBtn">Hide Video</button>
+          </div>
+        </div>
+
+        <div class="info-panel">
+          <div class="header-stats">
+            <div class="stat-card"><span class="stat-label">Session Time</span><span id="sessionTime" class="stat-value">00:00</span></div>
+            <div class="stat-card"><span class="stat-label">Poses Done</span><span id="posesCompleted" class="stat-value">0</span></div>
+            <div class="stat-card"><span class="stat-label">Total Hold</span><span id="totalHoldTime" class="stat-value">00:00</span></div>
+          </div>
+          <div class="pose-display">
+            <div class="card" id="currentPose">
+              <h2>Current Pose: <span id="poseName">Detecting...</span></h2>
+              <div class="pose-confidence">Confidence: <span id="poseConfidence">0%</span></div>
+            </div>
+            <div class="card timer-card">
+              <div class="timer" id="poseTimer">00:00</div>
+              <div class="timer-label">Hold Time</div>
             </div>
           </div>
-          
-          <!-- Timer -->
-          <div class="timer-section">
-            <div class="timer" id="poseTimer">00:00</div>
-            <div class="timer-label">Hold Time</div>
-          </div>
-        </div>
-        
-        <!-- Pose Selection -->
-        <div class="pose-selection">
-          <h3>Select Pose to Practice:</h3>
-          <div class="pose-buttons">
-            <button class="pose-btn" data-pose="warrior1">
-              <div class="pose-btn-content">
-                <div class="pose-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <!-- Warrior I Pose Icon -->
-                    <path d="M8 20L8 16L12 12L16 16L16 20L8 20Z" fill="currentColor" opacity="0.3"/>
-                    <path d="M12 20L12 4" stroke="currentColor" stroke-width="2"/>
-                    <path d="M8 8L12 4L16 8" stroke="currentColor" stroke-width="2"/>
-                    <circle cx="12" cy="6" r="2" fill="currentColor"/>
-                  </svg>
-                </div>
-                <span>Warrior I</span>
-              </div>
-            </button>
-            <button class="pose-btn" data-pose="tree">
-              <div class="pose-btn-content">
-                <div class="pose-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <!-- Tree Pose Icon -->
-                    <path d="M12 20L12 8" stroke="currentColor" stroke-width="2"/>
-                    <path d="M8 12L12 8L16 12" stroke="currentColor" stroke-width="2"/>
-                    <circle cx="12" cy="4" r="2" fill="currentColor"/>
-                    <path d="M6 16L18 16" stroke="currentColor" stroke-width="2"/>
-                    <path d="M6 18L18 18" stroke="currentColor" stroke-width="2"/>
-                  </svg>
-                </div>
-                <span>Tree Pose</span>
-              </div>
-            </button>
-            <button class="pose-btn" data-pose="mountain">
-              <div class="pose-btn-content">
-                <div class="pose-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <!-- Mountain Pose Icon -->
-                    <path d="M12 20L12 4" stroke="currentColor" stroke-width="2"/>
-                    <path d="M8 20L16 20" stroke="currentColor" stroke-width="2"/>
-                    <circle cx="12" cy="4" r="2" fill="currentColor"/>
-                    <path d="M10 8L14 8" stroke="currentColor" stroke-width="2"/>
-                    <path d="M10 12L14 12" stroke="currentColor" stroke-width="2"/>
-                  </svg>
-                </div>
-                <span>Mountain Pose</span>
-              </div>
-            </button>
-            <button class="pose-btn active" data-pose="auto">
-              <div class="pose-btn-content">
-                <div class="pose-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <!-- Auto Detect Icon -->
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
-                    <path d="M12 6L12 12L16 14" stroke="currentColor" stroke-width="2"/>
-                    <circle cx="12" cy="12" r="1" fill="currentColor"/>
-                  </svg>
-                </div>
-                <span>Auto Detect</span>
-              </div>
-            </button>
-          </div>
-        </div>
-        
-        <div class="mode-indicator" id="modeIndicator">
-          <span id="modeText">Loading...</span>
         </div>
       </div>
-
-      <!-- Right Side - Camera and Controls -->
-      <div class="video-panel">
-        <div class="video-container">
-          <video id="video" playsinline></video>
-          <canvas id="output"></canvas>
-        </div>
-        
-        <!-- Controls under camera -->
-        <div class="controls">
-          <button id="startBtn">Start Session</button>
-          <button id="resetBtn">Reset Session</button>
-          <button id="toggleVideoBtn">Hide Video</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Instructions at bottom -->
-    <div class="instructions" id="instructions">
-      <h3>Pose Instructions:</h3>
-      <div id="instructionText">Select a pose to see instructions</div>
-    </div>
+    </main>
   </div>
 
   <!-- TensorFlow.js -->
